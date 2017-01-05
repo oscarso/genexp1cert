@@ -141,11 +141,13 @@ BOOL GenerateSelfSignedCert(
 	DWORD dwKeySpec
 ) {
 	//Generate self-signed cert and export it
-	PCCERT_CONTEXT pCertContext = NULL;
-	BYTE *pbEncoded = NULL;
-	HCERTSTORE hStore = NULL;
+	HCERTSTORE		hStorePort = NULL;
+	PCCERT_CONTEXT	pCertContext = NULL;
+	BYTE			*pbEncoded = NULL;
+	HCERTSTORE		hStoreOpen = NULL;
 	HCRYPTPROV_OR_NCRYPT_KEY_HANDLE hCryptProvOrNCryptKey = NULL;
 	BOOL fCallerFreeProvOrNCryptKey = FALSE;
+	HANDLE	hFile = NULL;
 
 	__try {
 		// Encode certificate Subject
@@ -208,8 +210,8 @@ BOOL GenerateSelfSignedCert(
 			return FALSE;
 		}
 
-		hStore = CertOpenStore(CERT_STORE_PROV_SYSTEM, 0, 0, CERT_SYSTEM_STORE_CURRENT_USER, L"My");
-		if (!hStore) {
+		hStoreOpen = CertOpenStore(CERT_STORE_PROV_SYSTEM, 0, 0, CERT_SYSTEM_STORE_CURRENT_USER, L"My");
+		if (!hStoreOpen) {
 			// Error
 			printf("CertOpenStore Error=0x%x\n", GetLastError());
 			return FALSE;
@@ -217,10 +219,56 @@ BOOL GenerateSelfSignedCert(
 
 		// Add self-signed cert to the store
 		//_tprintf(_T(“CertAddCertificateContextToStore… “));
-
-		if (!CertAddCertificateContextToStore(hStore, pCertContext, CERT_STORE_ADD_REPLACE_EXISTING, 0)) {
+		CRYPT_DATA_BLOB cryptBlob;
+		cryptBlob.cbData = 0;
+		cryptBlob.pbData = NULL;
+		if (!PFXExportCertStore(hStoreOpen, &cryptBlob, L"", CRYPT_EXPORTABLE)) {
+			printf("PFXExportCertStore(1st) Error=0x%x\n", GetLastError());
+			return FALSE;
+		}
+		if (0 == cryptBlob.cbData) {
+			printf("cryptBlob.cbData == 0\n");
+			return FALSE;
+		}
+		cryptBlob.pbData = (BYTE *)malloc(cryptBlob.cbData);
+		if (!PFXExportCertStore(hStoreOpen, &cryptBlob, L"", CRYPT_EXPORTABLE)) {
+			printf("PFXExportCertStore(2nd) Error=0x%x\n", GetLastError());
+			return FALSE;
+		}
+		// is it actually a pfx blob?
+		if (!PFXIsPFXBlob(&cryptBlob)) {
 			// Error
-			printf("CertAddCertificateContextToStore Error=0x%x\n", GetLastError());
+			printf("PFXIsPFXBlob - cryptBlob is NOT pfx format\n");
+			return FALSE;
+		}
+
+		DWORD	dwWrote = 0;
+		hFile = CreateFile(
+			L"exp1cert.pfx",        // name of the write
+			GENERIC_WRITE,          // open for writing
+			0,                      // do not share
+			NULL,                   // default security
+			CREATE_NEW,             // create new file only
+			FILE_ATTRIBUTE_NORMAL,  // normal file
+			NULL);
+		if (INVALID_HANDLE_VALUE == hFile) {
+			printf("CreateFile Error=0x%x\n", GetLastError());
+			return FALSE;
+		}
+
+		if (!WriteFile(
+			hFile,             // open file handle
+			cryptBlob.pbData,  // start of data to write
+			cryptBlob.cbData,  // number of bytes to write
+			&dwWrote,          // number of bytes that were written
+			NULL))
+		{
+			printf("WriteFile Error=0x%x\n", GetLastError());
+			return FALSE;
+		}
+
+		if (dwWrote != cryptBlob.cbData) {
+			printf("WriteFile Error: dwWrote != cryptBlob.cbData");
 			return FALSE;
 		}
 	}
@@ -244,10 +292,14 @@ BOOL GenerateSelfSignedCert(
 				//_tprintf(_T(“Success\n”));
 			}
 
-			if (hStore) {
-				//_tprintf(_T(“CertCloseStore… “));
-				CertCloseStore(hStore, 0);
-				//_tprintf(_T(“Success\n”));
+			if (hStoreOpen) {
+				CertCloseStore(hStoreOpen, 0);
+			}
+			if (hStorePort) {
+				CertCloseStore(hStorePort, 0);
+			}
+			if (hFile) {
+				CloseHandle(hFile);
 			}
 		}
 
