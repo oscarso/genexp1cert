@@ -88,7 +88,7 @@ BOOL CreatePrivateExponentOneKey(
 		ptr += (dwBitLen / 16);
 
 		// Convert exponent1 to 1
-		for (n = 0; n < (dwBitLen / 16); n++) {
+		for (n = 0; n < (int)(dwBitLen / 16); n++) {
 			if (n == 0) ptr[n] = 1;
 			else ptr[n] = 0;
 		}
@@ -97,7 +97,7 @@ BOOL CreatePrivateExponentOneKey(
 		ptr += (dwBitLen / 16);
 
 		// Convert exponent2 to 1
-		for (n = 0; n < (dwBitLen / 16); n++) {
+		for (n = 0; n < (int)(dwBitLen / 16); n++) {
 			if (n == 0) ptr[n] = 1;
 			else ptr[n] = 0;
 		}
@@ -107,13 +107,13 @@ BOOL CreatePrivateExponentOneKey(
 		ptr += (dwBitLen / 16);
 
 		// Convert privateExponent to 1
-		for (n = 0; n < (dwBitLen / 8); n++) {
+		for (n = 0; n < (int)(dwBitLen / 8); n++) {
 			if (n == 0) ptr[n] = 1;
 			else ptr[n] = 0;
 		}
 
-		// Import the exponent-of-one private key.      
-		if (!CryptImportKey(*hProv, keyblob, dwkeyblob, 0, 0, hPrivateKey)) {
+		// Import the exponent-of-one private key
+		if (!CryptImportKey(*hProv, keyblob, dwkeyblob, 0, CRYPT_EXPORTABLE, hPrivateKey)) {
 			__leave;
 		}
 
@@ -135,7 +135,10 @@ BOOL CreatePrivateExponentOneKey(
 
 
 BOOL GenerateSelfSignedCert(
-	LPTSTR szContainer
+	LPTSTR szProvider,
+	DWORD dwProvType,
+	LPTSTR szContainer,
+	DWORD dwKeySpec
 ) {
 	//Generate self-signed cert and export it
 	PCCERT_CONTEXT pCertContext = NULL;
@@ -179,12 +182,12 @@ BOOL GenerateSelfSignedCert(
 		CRYPT_KEY_PROV_INFO KeyProvInfo;
 		memset(&KeyProvInfo, 0, sizeof(KeyProvInfo));
 		KeyProvInfo.pwszContainerName = szContainer;
-		KeyProvInfo.pwszProvName = NULL;
-		KeyProvInfo.dwProvType = PROV_RSA_FULL;
-		KeyProvInfo.dwFlags = CRYPT_MACHINE_KEYSET;
+		KeyProvInfo.pwszProvName = szProvider;
+		KeyProvInfo.dwProvType = dwProvType;
+		KeyProvInfo.dwFlags = 0;
 		KeyProvInfo.cProvParam = 0;
 		KeyProvInfo.rgProvParam = NULL;
-		KeyProvInfo.dwKeySpec = AT_SIGNATURE;
+		KeyProvInfo.dwKeySpec = dwKeySpec;
 
 		// Prepare algorithm structure for self-signed certificate
 		CRYPT_ALGORITHM_IDENTIFIER SignatureAlgorithm;
@@ -270,7 +273,7 @@ int main()
 			__leave;
 		}
 
-		fResult = GenerateSelfSignedCert(KEY_CONTAINER_NAME);
+		fResult = GenerateSelfSignedCert(MS_ENHANCED_PROV, PROV_RSA_FULL, KEY_CONTAINER_NAME, AT_KEYEXCHANGE);
 		if (!fResult) {
 			printf("GenerateSelfSignedCert failed with %x\n", GetLastError());
 			__leave;
